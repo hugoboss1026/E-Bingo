@@ -413,8 +413,8 @@
         if(data.type === 'SYNC_GAME') {
             drawn = data.drawn;
             gamePatterns = data.p;
-            launch();
-            updateGame(drawn[drawn.length - 1], true);
+            launch(); 
+            updateGame(drawn[drawn.length - 1], true); 
         }
 
         if(data.type === 'CLAIM') {
@@ -521,17 +521,18 @@
         if(document.getElementById('recent-list-container')) document.getElementById('recent-list-container').innerHTML = '';
         if(document.getElementById('num-box')) document.getElementById('num-box').innerText = '--';
         
-        // CLEAR MARKS: Resets all card markers to just the FREE space (index 12)
-        myCards.forEach(c => {
-            c.marked = [12];
-        }); 
+        // CLEAR MARKS: Every card is cleared back to ONLY the FREE square (index 12)
+        myCards.forEach(c => c.marked = [12]); 
         
         isReady = isHost; 
         hasClaimedThisRound = false; 
         if (!isHost) document.getElementById('ready-btn').innerText = "I AM READY";
+        
         sync(); 
         saveAppState(); 
         renderLobby(); 
+        // Ensure game cards list is also visually empty until next round
+        if(document.getElementById('game-cards-list')) document.getElementById('game-cards-list').innerHTML = '';
     }
 
     function launch() { hasClaimedThisRound = false; switchView('view-game'); if(isHost) document.getElementById('host-hud').classList.remove('hidden'); renderGame(); }
