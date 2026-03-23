@@ -1,0 +1,632 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Bingo Pro: Cyber Edition</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root { 
+            --primary: #00f2ff; --secondary: #7000ff; --success: #00ff88; 
+            --danger: #ff0055; --dark: #050505; --gold: #fbbf24;
+            --card-bg: rgba(255, 255, 255, 0.07);
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { 
+            background: radial-gradient(circle at center, #1a1a2e 0%, #050505 100%);
+            margin: 0; padding: 10px; color: #fff; user-select: none; height: 100vh; overflow: hidden;
+        }
+
+        .container { 
+            max-width: 500px; margin: auto; background: rgba(15, 15, 35, 0.8);
+            backdrop-filter: blur(20px); border: 1px solid rgba(0, 242, 255, 0.2);
+            border-radius: 30px; padding: 20px; height: 95vh; display: flex; flex-direction: column; position: relative; 
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+        }
+
+        .hidden { display: none !important; }
+
+        /* RECENT CALLS BANNER */
+        #recent-calls-banner {
+            display: flex; align-items: center; background: rgba(0, 0, 0, 0.5);
+            padding: 10px; border-radius: 20px; margin: 10px 0;
+            border: 1px solid rgba(0, 242, 255, 0.2); overflow: hidden;
+        }
+        #recent-list-container { display: flex; gap: 10px; }
+        .mini-ball {
+            flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 0.9rem; color: rgba(255, 255, 255, 0.5);
+            animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .mini-ball.latest-call {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #000; border: 2px solid #fff; box-shadow: 0 0 20px var(--primary);
+            transform: scale(1.1); font-size: 1.1rem; z-index: 10;
+        }
+        @keyframes slideIn {
+            0% { opacity: 0; transform: translateX(50px) scale(0.5); }
+            100% { opacity: 1; transform: translateX(0) scale(1.1); }
+        }
+
+        /* BINGO CARD */
+        .bingo-card { background: var(--card-bg); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 12px; margin-bottom: 20px; position: relative; overflow: hidden; }
+        .bingo-header { display: grid; grid-template-columns: repeat(5, 1fr); text-align: center; font-weight: 900; font-size: 1.4rem; color: var(--primary); text-shadow: 0 0 10px var(--primary); }
+        .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; position: relative; }
+        .cell { aspect-ratio: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-weight: 800; border-radius: 8px; font-size: 0.9rem; color: #ddd; position: relative; cursor: pointer; }
+        .cell.marked { background: linear-gradient(135deg, var(--success), #00a35e); color: #000; border-color: var(--success); box-shadow: 0 0 8px var(--success); }
+        .cell.hint::after { content: ''; position: absolute; width: 6px; height: 6px; background: var(--primary); border-radius: 50%; top: 3px; right: 3px; box-shadow: 0 0 5px var(--primary); }
+
+        /* WIN ANIMATIONS */
+        @keyframes winnerGlow {
+            0% { box-shadow: 0 0 10px var(--gold); border-color: var(--gold); }
+            50% { box-shadow: 0 0 30px var(--gold), 0 0 50px var(--primary); border-color: #fff; }
+            100% { box-shadow: 0 0 10px var(--gold); border-color: var(--gold); }
+        }
+        .bingo-card.winner { animation: winnerGlow 1.5s infinite; border: 2px solid var(--gold); }
+        .bingo-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(4px); }
+        .btn-win { background: linear-gradient(135deg, var(--gold), #ff8c00); color: #000; border: 2px solid #fff; padding: 15px 35px; font-size: 1.8rem; font-weight: 900; border-radius: 15px; cursor: pointer; box-shadow: 0 0 30px var(--gold); text-transform: uppercase; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
+
+        /* HUD & BUTTONS */
+        #num-box { font-size: 5.5rem; text-align: center; font-weight: 900; color: #fff; text-shadow: 0 0 20px var(--primary); min-height: 110px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .btn { width: 100%; padding: 15px; border: none; border-radius: 18px; font-weight: 800; cursor: pointer; text-transform: uppercase; transition: 0.2s; }
+        .btn-main { background: linear-gradient(90deg, var(--secondary), #4e00b3); color: white; margin-top: 10px; box-shadow: 0 4px 15px rgba(112, 0, 255, 0.3); }
+        .btn-action { background: rgba(255,255,255,0.1); color: var(--primary); padding: 8px 12px; border-radius: 10px; font-size: 0.7rem; border: 1px solid rgba(0, 242, 255, 0.3); cursor: pointer; }
+
+        input, select { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 12px; border-radius: 12px; width: 100%; margin-bottom: 10px; }
+        select option, select optgroup { background: #1a1a2e; color: #fff; }
+        #history-panel, #trash-panel { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(5, 5, 5, 0.98); backdrop-filter: blur(30px); z-index: 200; border-radius: 25px; display: flex; flex-direction: column; padding: 20px; border: 1px solid var(--primary); }
+        
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #333; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--success); }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        /* LOBBY CARD CONTROLS */
+        .card-controls { position: absolute; top: 10px; right: 10px; display: flex; gap: 8px; z-index: 100; }
+        .control-btn { background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.2); width: 32px; height: 32px; border-radius: 8px; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        .control-btn:hover { background: var(--primary); color: #000; }
+
+        /* FLOATING TRASH BUTTON */
+        #trash-fab {
+            position: absolute; bottom: 85px; right: 20px; width: 55px; height: 55px;
+            background: var(--danger); border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 20px var(--danger); cursor: pointer; z-index: 150; border: 2px solid #fff;
+            transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        #trash-fab:active { transform: scale(0.9); }
+        #trash-count {
+            position: absolute; top: -5px; right: -5px; background: #fff; color: var(--danger);
+            font-size: 0.7rem; font-weight: 900; width: 20px; height: 20px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; border: 1px solid var(--danger);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="view-start">
+        <h1 style="text-align:center; color:var(--primary); font-size: 2.2rem; margin-bottom: 5px; text-shadow: 0 0 15px var(--primary);">E-BINGO PRO</h1>
+        <p style="text-align:center; color:rgba(255,255,255,0.4); margin-bottom: 30px; font-size: 0.7rem; letter-spacing: 2px;">CYBER EDITION</p>
+        <div style="margin-bottom: 10px;">
+            <label style="font-size: 0.6rem; color: var(--primary); font-weight: bold; text-transform: uppercase;">Operator Identity</label>
+            <input type="text" id="user-name" placeholder="Enter Name..." oninput="saveOperator(this.value)">
+        </div>
+        <button class="btn btn-main" onclick="initSession('host')">CREATE LOBBY</button>
+        <div style="margin-top:30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 25px;">
+            <input type="number" id="join-id" placeholder="LOBBY CODE">
+            <button class="btn" style="background:rgba(255,255,255,0.1); color:#fff;" onclick="initSession('join')">JOIN LOBBY</button>
+        </div>
+    </div>
+
+    <div id="view-lobby" class="hidden" style="display:flex; flex-direction:column; height:100%;">
+        <div style="text-align:center; margin-bottom: 10px;"><small style="color:rgba(255,255,255,0.5)">LOBBY ID:</small> <b id="lobby-id-display" style="color:var(--primary);">-----</b></div>
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px; background:rgba(255,255,255,0.05); border-radius:15px; margin-bottom:10px; border: 1px solid rgba(0,242,255,0.1);">
+            <span style="font-size:0.7rem; font-weight:bold; color:var(--primary);">VOICE CHAT</span>
+            <label class="switch"><input type="checkbox" class="voice-toggle" onchange="toggleVoice(this.checked)"><span class="slider"></span></label>
+        </div>
+
+        <div id="lobby-scroll" style="flex:1; overflow-y:auto; padding-right:5px;">
+            <div id="leaderboard-section" class="hidden" style="border: 1px solid var(--gold); border-radius: 15px; padding: 12px; margin-bottom: 10px; background: rgba(251, 191, 36, 0.1);">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <small style="color:var(--gold)">🏆 <b>LEADERBOARD</b></small>
+                    <button class="btn-action" style="background:var(--danger); color:#fff; border:none;" onclick="resetTournament()">RESET</button>
+                </div>
+                <div id="leaderboard-list" style="margin-top:8px;"></div>
+            </div>
+            <div id="player-list-container"></div>
+            
+            <div id="host-settings" class="hidden" style="background:rgba(112, 0, 255, 0.1); padding:15px; border-radius:20px; margin:15px 0; border: 1px solid rgba(112, 0, 255, 0.3);">
+                <p style="font-size:0.7rem; font-weight:900; text-align: center; color:var(--primary); margin-bottom:10px;">PATTERN ENGINE</p>
+                <div id="pattern-tabs" style="display:flex; gap:5px; overflow-x:auto; padding-bottom:5px;"></div>
+                <div id="pattern-container"></div>
+            </div>
+
+            <div id="lobby-cards-previews"></div>
+            <button class="btn" style="background:transparent; border:1px dashed var(--primary); color:var(--primary); margin-top:10px;" onclick="addCard()">+ GENERATE CARD</button>
+        </div>
+
+        <div id="trash-fab" class="hidden" onclick="toggleTrash(true)">
+            <span>🗑️</span>
+            <div id="trash-count">0</div>
+        </div>
+
+        <button id="ready-btn" class="btn btn-main" style="background:var(--success);" onclick="toggleReady()">I AM READY</button>
+        <button id="start-btn" class="btn btn-main hidden" disabled onclick="broadcastStart()">LAUNCH SESSION</button>
+    </div>
+
+    <div id="view-game" class="hidden" style="display:flex; flex-direction:column; height:100%;">
+        <div id="host-hud" class="hidden">
+            <div id="num-box">--</div>
+            <button id="draw-btn" class="btn btn-main" onclick="drawNext()">DRAW BALL</button>
+        </div>
+        <div id="recent-calls-banner">
+            <span style="font-size: 0.6rem; font-weight: 900; color: var(--primary); margin-right: 8px;">LIVE:</span>
+            <div id="recent-list-container"></div>
+        </div>
+        
+        <div style="display:flex; gap:10px; padding: 10px; border-bottom:1px solid rgba(255,255,255,0.1);">
+            <div style="flex:1; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.6rem; font-weight:bold; color:var(--primary);">AUTO-SCAN</span>
+                <label class="switch"><input type="checkbox" id="auto-mark-toggle" onchange="toggleAutoMark()"><span class="slider"></span></label>
+            </div>
+            <div style="flex:1; display:flex; justify-content:space-between; align-items:center; border-left: 1px solid rgba(255,255,255,0.1); padding-left:10px;">
+                <span style="font-size:0.6rem; font-weight:bold; color:var(--success);">VOICE</span>
+                <label class="switch"><input type="checkbox" class="voice-toggle" onchange="toggleVoice(this.checked)"><span class="slider"></span></label>
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="btn btn-action" style="flex:1;" onclick="toggleHistory(true)">📋 SESSION LOGS</button>
+            <button id="host-back-btn" class="btn btn-action hidden" style="flex:1; color:var(--danger); border-color:var(--danger);" onclick="broadcastBackToLobby()">END ROUND</button>
+        </div>
+        <div id="game-cards-list" style="flex:1; overflow-y:auto; margin-top:15px;"></div>
+    </div>
+
+    <div id="history-panel" class="hidden">
+        <h2 style="text-align: center; color:var(--primary); font-size: 1rem;">CALL HISTORY</h2>
+        <div style="flex: 1; overflow-y: auto;">
+            <div id="history-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px;">
+                <div id="col-B"></div><div id="col-I"></div><div id="col-N"></div><div id="col-G"></div><div id="col-O"></div>
+            </div>
+        </div>
+        <button class="btn btn-main" onclick="toggleHistory(false)">CLOSE LOGS</button>
+    </div>
+
+    <div id="trash-panel" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 style="color:var(--danger); font-size: 1rem; margin:0;">🗑️ RECYCLE BIN</h2>
+            <button class="btn-action" style="color:var(--danger); border-color:var(--danger);" onclick="emptyTrash()">EMPTY ALL</button>
+        </div>
+        <div id="trash-list-container" style="flex: 1; overflow-y: auto; padding-right:5px;"></div>
+        <button class="btn btn-main" style="margin-top:15px;" onclick="toggleTrash(false)">CLOSE BIN</button>
+    </div>
+</div>
+
+<script>
+    let peer, conn, isHost = false, myName = "", drawn = [], isReady = false, autoMarkEnabled = false;
+    let myCards = [], deletedCards = [], players = {}, activePIndex = 0, gamePatterns = [Array(25).fill(false)];
+    let sessionWins = JSON.parse(localStorage.getItem('bingo_wins')) || {}, hasClaimedThisRound = false;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx;
+
+    let localStream = null;
+    let voiceCalls = {};
+    let voiceEnabled = false;
+
+    const PATTERN_PRESETS = {
+        "Blackout": Array(25).fill(true),
+        "X Shape": [1,0,0,0,1,0,1,0,1,0,0,0,1,0,0,0,1,0,1,0,1,0,0,0,1],
+        "Frame": [1,1,1,1,1,1,0,0,0,1,1,0,0,0,1,1,0,0,0,1,1,1,1,1,1]
+    };
+    let mySavedPatterns = JSON.parse(localStorage.getItem('bingo_p_lib')) || {};
+
+    async function toggleVoice(enabled) {
+        voiceEnabled = enabled;
+        document.querySelectorAll('.voice-toggle').forEach(el => el.checked = enabled);
+        if (enabled) {
+            try {
+                if (!localStream) {
+                    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                }
+                localStream.getAudioTracks().forEach(t => t.enabled = true);
+                startVoiceMesh();
+            } catch (err) {
+                console.error("Mic access denied", err);
+                alert("Microphone access is required for voice chat.");
+                toggleVoice(false);
+            }
+        } else {
+            if (localStream) {
+                localStream.getAudioTracks().forEach(t => t.enabled = false);
+            }
+            Object.values(voiceCalls).forEach(call => call.close());
+            voiceCalls = {};
+        }
+    }
+
+    function startVoiceMesh() {
+        if (!peer || !voiceEnabled) return;
+        if (isHost) {
+            Object.values(peer.connections).forEach(conns => {
+                conns.forEach(c => callPeer(c.peer));
+            });
+        } else if (conn) {
+            callPeer(conn.peer);
+        }
+    }
+
+    function callPeer(id) {
+        if (voiceCalls[id] || id === peer.id) return;
+        const call = peer.call(id, localStream);
+        voiceCalls[id] = call;
+        setupCallListeners(call);
+    }
+
+    function setupCallListeners(call) {
+        call.on('stream', remoteStream => {
+            let audio = document.getElementById('audio-' + call.peer);
+            if (!audio) {
+                audio = document.createElement('audio');
+                audio.id = 'audio-' + call.peer;
+                audio.autoplay = true;
+                document.body.appendChild(audio);
+            }
+            audio.srcObject = remoteStream;
+        });
+        call.on('close', () => {
+            const audio = document.getElementById('audio-' + call.peer);
+            if (audio) audio.remove();
+            delete voiceCalls[call.peer];
+        });
+    }
+
+    function saveAppState() {
+        const state = {
+            myCards, deletedCards, autoMarkEnabled, gamePatterns, activePIndex,
+            lastJoinId: document.getElementById('join-id').value
+        };
+        localStorage.setItem('bingo_app_state', JSON.stringify(state));
+    }
+
+    function loadAppState() {
+        const saved = JSON.parse(localStorage.getItem('bingo_app_state'));
+        if (saved) {
+            myCards = saved.myCards || [];
+            deletedCards = saved.deletedCards || [];
+            autoMarkEnabled = saved.autoMarkEnabled || false;
+            gamePatterns = saved.gamePatterns || [Array(25).fill(false)];
+            activePIndex = saved.activePIndex || 0;
+            if (saved.lastJoinId) document.getElementById('join-id').value = saved.lastJoinId;
+            document.getElementById('auto-mark-toggle').checked = autoMarkEnabled;
+            renderLobby();
+        }
+    }
+
+    function getBingoLetter(n) {
+        if (n <= 15) return 'B'; if (n <= 30) return 'I'; if (n <= 45) return 'N'; if (n <= 60) return 'G'; return 'O';
+    }
+
+    function playSound(type) {
+        if(!audioCtx) audioCtx = new AudioCtx();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(type === 'draw' ? 880 : 440, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    function announceNumber(letter, n) {
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(`${letter}... ${n}`);
+        u.pitch = 0.8; u.rate = 1.0;
+        setTimeout(() => window.speechSynthesis.speak(u), 500);
+    }
+
+    window.onload = () => {
+        const savedOp = localStorage.getItem('bingo_operator');
+        if (savedOp) document.getElementById('user-name').value = savedOp;
+        loadAppState();
+        renderLeaderboard();
+    };
+
+    function saveOperator(v) { localStorage.setItem('bingo_operator', v); }
+
+    function switchView(id) {
+        document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden'));
+        document.getElementById(id).classList.remove('hidden');
+    }
+
+    function initSession(mode) {
+        myName = document.getElementById('user-name').value.trim();
+        if (!myName) return alert("Name Required!");
+        saveAppState(); 
+        if (mode === 'host') startAsHost(); else joinLobby(document.getElementById('join-id').value);
+    }
+
+    function startAsHost() {
+        isHost = true; isReady = true;
+        peer = new Peer(Math.floor(10000 + Math.random() * 90000).toString());
+        peer.on('open', id => {
+            document.getElementById('lobby-id-display').innerText = id;
+            document.getElementById('host-settings').classList.remove('hidden');
+            document.getElementById('start-btn').classList.remove('hidden');
+            document.getElementById('host-back-btn').classList.remove('hidden');
+            document.getElementById('ready-btn').classList.add('hidden');
+            if(gamePatterns[0]) gamePatterns[0][12] = true;
+            if(myCards.length === 0) addCard();
+            updatePatternUI(); 
+            switchView('view-lobby');
+            sync(); 
+        });
+        peer.on('connection', c => c.on('data', data => handleData(data, c)));
+        peer.on('call', call => {
+            if (voiceEnabled) {
+                call.answer(localStream);
+                setupCallListeners(call);
+            }
+        });
+    }
+
+    function joinLobby(id) {
+        if(!id) return alert("Enter Code!");
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect(id);
+            conn.on('open', () => { 
+                if(myCards.length === 0) addCard(); 
+                switchView('view-lobby'); 
+                document.getElementById('lobby-id-display').innerText = id; 
+                sync();
+            });
+            conn.on('data', data => handleData(data));
+        });
+        peer.on('call', call => {
+            if (voiceEnabled) {
+                call.answer(localStream);
+                setupCallListeners(call);
+            }
+        });
+    }
+
+    function handleData(data, c) {
+        // STATE SYNC LOGIC: If a game is active and someone joins/reconnects, catch them up.
+        if (isHost && data.type === 'STATUS' && drawn.length > 0) {
+            c.send({ type: 'SYNC_GAME', drawn: drawn, p: gamePatterns });
+        }
+
+        if(data.type === 'STATUS') { players[data.name] = data; renderPlayers(); if(isHost) relay({type:'LIST', list:players}); }
+        if(data.type === 'LIST') renderPlayers(data.list);
+        if(data.type === 'START') { gamePatterns = data.p; saveAppState(); launch(); }
+        if(data.type === 'DRAW') updateGame(data.n);
+        if(data.type === 'LOBBY') { switchView('view-lobby'); reset(); }
+        if(data.type === 'LEADERBOARD_UPDATE') { sessionWins = data.wins; renderLeaderboard(); }
+        if(data.type === 'BINGO_ALERT') alert(data.msg);
+        
+        // Handle caught up state
+        if(data.type === 'SYNC_GAME') {
+            drawn = data.drawn;
+            gamePatterns = data.p;
+            launch(); // Immediately jump into the game view
+            updateGame(drawn[drawn.length - 1], true); // Update UI without double-animation
+        }
+
+        if(data.type === 'CLAIM') {
+            playSound('bingo');
+            sessionWins[data.name] = (sessionWins[data.name] || 0) + 1;
+            localStorage.setItem('bingo_wins', JSON.stringify(sessionWins));
+            renderLeaderboard();
+            relay({type: 'LEADERBOARD_UPDATE', wins: sessionWins});
+            relay({type: 'BINGO_ALERT', msg: `🚨 BINGO!\nWinner: ${data.name}\nCard: #${data.cardId}`});
+            alert(`🚨 BINGO!\nWinner: ${data.name}\nCard: #${data.cardId}`);
+        }
+    }
+
+    function relay(msg) { Object.values(peer.connections).forEach(cs => cs.forEach(c => c.send(msg))); }
+    
+    function sync() { 
+        const s = { type:'STATUS', name:myName, ready:isReady, cards:myCards.length }; 
+        if(isHost) { players[myName]=s; renderPlayers(); relay({type:'LIST', list:players}); } 
+        else if(conn && conn.open) conn.send(s); 
+    }
+
+    async function drawNext() {
+        if (drawn.length >= 75) return alert("Tournament Over!");
+        const btn = document.getElementById('draw-btn'); 
+        if (btn.disabled) return;
+        btn.disabled = true; 
+        try {
+            let f;
+            do { f = Math.floor(Math.random()*75)+1; } while(drawn.includes(f));
+            for(let i=0; i<6; i++) { 
+                document.getElementById('num-box').innerText = Math.floor(Math.random()*75)+1;
+                await new Promise(r => setTimeout(r, 60)); 
+            }
+            updateGame(f); 
+            relay({type:'DRAW', n:f});
+        } finally {
+            setTimeout(() => { if(btn) btn.disabled = false; }, 500);
+        }
+    }
+
+    function updateGame(n, skipSound = false) {
+        if(!drawn.includes(n)) { drawn.push(n); if(!skipSound) playSound('draw'); }
+        const letter = getBingoLetter(n);
+        document.getElementById('num-box').innerHTML = `<span style="color:var(--primary); opacity:0.8; margin-right:15px;">${letter}</span>${n}`;
+        const container = document.getElementById('recent-list-container');
+        const recent = [...drawn].reverse().slice(0, 10);
+        container.innerHTML = recent.map((num, i) => `<div class="mini-ball ${i===0?'latest-call':''}">${num}</div>`).join('');
+        if(isHost && !skipSound) announceNumber(letter, n);
+        if(autoMarkEnabled) {
+            myCards.forEach(c => {
+                drawn.forEach(num => {
+                    const i = c.numbers.indexOf(num);
+                    if(i!==-1 && !c.marked.includes(i)) c.marked.push(i);
+                });
+            });
+        }
+        saveAppState();
+        renderGame();
+    }
+
+    function renderGame() {
+        const list = document.getElementById('game-cards-list'); list.innerHTML = '';
+        myCards.forEach((card, idx) => {
+            const wrap = document.createElement('div'); wrap.className = 'bingo-card';
+            const isWinner = checkWin(idx);
+            if (isWinner) wrap.classList.add('winner');
+            wrap.innerHTML = `<div class="bingo-header"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>`;
+            const grid = document.createElement('div'); grid.className = 'grid';
+            card.numbers.forEach((n, i) => {
+                const isP = gamePatterns.some(p => p[i]);
+                const cell = document.createElement('div');
+                cell.className = 'cell' + (card.marked.includes(i) ? ' marked' : '') + (isP ? ' hint' : '');
+                cell.innerText = i===12?'FREE':n;
+                cell.onclick = () => { if (drawn.includes(n) || i === 12) { if (card.marked.includes(i)) card.marked = card.marked.filter(m => m !== i); else card.marked.push(i); saveAppState(); renderGame(); } };
+                grid.appendChild(cell);
+            });
+            if (isWinner && !hasClaimedThisRound) {
+                const ov = document.createElement('div'); ov.className = 'bingo-overlay';
+                ov.innerHTML = `<button class="btn-win" onclick="claim(${idx})">BINGO!</button>`;
+                wrap.appendChild(ov);
+            }
+            wrap.appendChild(grid); list.appendChild(wrap);
+        });
+    }
+
+    function checkWin(idx) { const c = myCards[idx]; return gamePatterns.some(p => p.every((req, i) => !req || c.marked.includes(i))); }
+    
+    function claim(idx) { 
+        if(hasClaimedThisRound) return;
+        hasClaimedThisRound = true;
+        const cid = myCards[idx].id;
+        if(isHost) { 
+            playSound('bingo'); sessionWins[myName] = (sessionWins[myName] || 0) + 1;
+            localStorage.setItem('bingo_wins', JSON.stringify(sessionWins));
+            renderLeaderboard(); relay({type:'LEADERBOARD_UPDATE', wins:sessionWins}); 
+            relay({type: 'BINGO_ALERT', msg: `🚨 BINGO!\nWinner: ${myName} (Host)\nCard: #${cid}`});
+            alert(`🚨 BINGO!\nWinner: ${myName} (Host)\nCard: #${cid}`);
+        } else conn.send({type:'CLAIM', name:myName, cardId: cid});
+        renderGame();
+    }
+
+    function reset() { 
+        drawn = []; 
+        if(document.getElementById('recent-list-container')) document.getElementById('recent-list-container').innerHTML = '';
+        if(document.getElementById('num-box')) document.getElementById('num-box').innerText = '--';
+        myCards.forEach(c => c.marked = [12]); 
+        isReady = isHost; hasClaimedThisRound = false; 
+        if (!isHost) document.getElementById('ready-btn').innerText = "I AM READY";
+        sync(); saveAppState(); renderLobby(); 
+    }
+
+    function launch() { hasClaimedThisRound = false; switchView('view-game'); if(isHost) document.getElementById('host-hud').classList.remove('hidden'); renderGame(); }
+
+    function toggleHistory(show) {
+        document.getElementById('history-panel').classList.toggle('hidden', !show);
+        if(show) {
+            ['B','I','N','G','O'].forEach(l => document.getElementById(`col-${l}`).innerHTML = `<div style="color:var(--primary); font-weight:900; margin-bottom:10px;">${l}</div>`);
+            [...drawn].sort((a,b) => a-b).forEach(n => {
+                const l = getBingoLetter(n); const d = document.createElement('div');
+                d.style.cssText = "background:rgba(0,242,255,0.1); border:1px solid var(--primary); color:var(--primary); border-radius:4px; padding:3px; font-size:0.75rem; margin-bottom:4px; text-align:center;";
+                d.innerText = n; document.getElementById(`col-${l}`).appendChild(d);
+            });
+        }
+    }
+
+    function updatePatternUI() {
+        const existingSel = document.getElementById('pattern-selector');
+        const currentVal = existingSel ? existingSel.value : "";
+        document.getElementById('pattern-tabs').innerHTML = gamePatterns.map((_, i) => `
+            <div class="btn-action" style="background:${i===activePIndex?'var(--primary)':'rgba(255,255,255,0.1)'}; color:${i===activePIndex?'#000':'var(--primary)'};" onclick="activePIndex=${i};updatePatternUI();saveAppState();">
+                S${i+1} <span onclick="deletePatternSlot(${i}, event)" style="color:var(--danger); font-weight:bold; margin-left:3px;">×</span>
+            </div>`).join('') + `<button class="btn-action" onclick="gamePatterns.push(Array(25).fill(false));gamePatterns[gamePatterns.length-1][12]=true;activePIndex=gamePatterns.length-1;updatePatternUI();saveAppState();">+</button>`;
+        document.getElementById('pattern-container').innerHTML = `
+            <div style="display:flex; gap:5px; margin-top:10px;">
+                <select id="pattern-selector" onchange="applyPattern(this.value)" style="flex:1; margin-bottom:0;">
+                    <option value="" ${currentVal === "" ? "selected" : ""} disabled>-- Load Pattern --</option>
+                    <optgroup label="Presets">${Object.keys(PATTERN_PRESETS).map(p=>`<option value="P_${p}" ${currentVal === 'P_'+p ? "selected" : ""}>${p}</option>`).join('')}</optgroup>
+                    <optgroup label="Saved">${Object.keys(mySavedPatterns).map(p=>`<option value="S_${p}" ${currentVal === 'S_'+p ? "selected" : ""}>${p}</option>`).join('')}</optgroup>
+                </select>
+                <button class="btn-action" style="border-color:var(--danger); color:var(--danger); padding: 12px;" onclick="deleteSavedPattern()">🗑️</button>
+            </div>
+            <div class="grid" style="width:120px; margin:15px auto;">
+                ${Array(25).fill(0).map((_, i) => `<div onclick="tglP(${i})" style="aspect-ratio:1; border:1px solid rgba(255,255,255,0.2); cursor:pointer; background:${gamePatterns[activePIndex][i]?'var(--primary)':'transparent'};"></div>`).join('')}
+            </div>
+            <div style="display:flex; gap:5px;">
+                <button class="btn-action" style="flex:1; border-color:var(--danger); color:var(--danger);" onclick="gamePatterns[activePIndex]=Array(25).fill(false);gamePatterns[activePIndex][12]=true;updatePatternUI();saveAppState();">CLEAR</button>
+                <button class="btn-action" style="flex:2; border-color:var(--success); color:var(--success);" onclick="savePattern()">💾 SAVE PATTERN</button>
+            </div>`;
+    }
+
+    function tglP(i) { if(i===12) return; gamePatterns[activePIndex][i] = !gamePatterns[activePIndex][i]; updatePatternUI(); saveAppState(); }
+    function deletePatternSlot(idx, e) { e.stopPropagation(); if(gamePatterns.length <= 1) return; gamePatterns.splice(idx, 1); activePIndex = 0; updatePatternUI(); saveAppState(); }
+    function applyPattern(v) { if(!v) return; let p = v.startsWith('P_') ? PATTERN_PRESETS[v.replace('P_','')] : mySavedPatterns[v.replace('S_','')]; if (p) gamePatterns[activePIndex] = [...p]; updatePatternUI(); saveAppState(); }
+    function savePattern() { let n = prompt("Pattern Name:"); if(n) { mySavedPatterns[n] = [...gamePatterns[activePIndex]]; localStorage.setItem('bingo_p_lib', JSON.stringify(mySavedPatterns)); updatePatternUI(); } }
+    
+    function deleteSavedPattern() {
+        const sel = document.getElementById('pattern-selector');
+        const val = sel ? sel.value : "";
+        if (!val || !val.startsWith('S_')) return alert("Select a SAVED pattern to delete!");
+        const pName = val.replace('S_', '');
+        if (confirm(`Delete "${pName}"?`)) {
+            delete mySavedPatterns[pName];
+            localStorage.setItem('bingo_p_lib', JSON.stringify(mySavedPatterns));
+            if (sel) sel.value = "";
+            updatePatternUI();
+        }
+    }
+
+    function toggleReady() { isReady = !isReady; sync(); document.getElementById('ready-btn').innerText = isReady ? "UNREADY" : "I AM READY"; }
+    function broadcastStart() { if (confirm("LAUNCH session?")) { relay({type:'START', p: gamePatterns}); launch(); } }
+    function broadcastBackToLobby() { if (confirm("🚨 END ROUND?")) { relay({type:'LOBBY'}); switchView('view-lobby'); reset(); } }
+
+    function addCard() { myCards.push({ numbers: genData(), marked: [12], id: Math.floor(1000 + Math.random()*8999) }); saveAppState(); renderLobby(); sync(); }
+    function deleteCard(idx) { if (confirm("Move this card to Recycle Bin?")) { deletedCards.push(myCards[idx]); myCards.splice(idx, 1); saveAppState(); renderLobby(); sync(); } }
+    function restoreCard(idx) { myCards.push(deletedCards[idx]); deletedCards.splice(idx, 1); saveAppState(); renderLobby(); sync(); }
+    function emptyTrash() { if(confirm("Permanently clear?")) { deletedCards = []; saveAppState(); toggleTrash(false); renderLobby(); } }
+    function shuffleCard(idx) { if (confirm("Shuffle numbers?")) { myCards[idx].numbers = genData(); myCards[idx].marked = [12]; saveAppState(); renderLobby(); sync(); } }
+
+    function toggleTrash(show) { document.getElementById('trash-panel').classList.toggle('hidden', !show); if(show) renderTrashList(); }
+    function renderTrashList() {
+        const container = document.getElementById('trash-list-container');
+        container.innerHTML = deletedCards.map((c, i) => `
+            <div class="bingo-card" style="transform: scale(0.7); margin: -30px 0; opacity: 0.8;">
+                <div class="card-controls" style="top:5px; right:5px;"><button class="btn-action" style="background:var(--success); color:#000;" onclick="restoreCard(${i}); renderTrashList();">RESTORE</button></div>
+                <div style="position:absolute; top:5px; left:10px; color:var(--primary); font-size:0.6rem;">ID: #${c.id}</div>
+                <div class="bingo-header"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
+                <div class="grid">${c.numbers.map((n, idx) => `<div class="cell ${idx===12?'marked':''}">${idx===12?'FREE':n}</div>`).join('')}</div>
+            </div>
+        `).join('') || '<p style="text-align:center; opacity:0.3; margin-top:50px;">Trash is empty.</p>';
+    }
+
+    function renderLobby() { 
+        const container = document.getElementById('lobby-cards-previews');
+        container.innerHTML = myCards.map((c, i) => `
+            <div class="bingo-card" style="transform: scale(0.8); margin: -20px 0; position: relative;">
+                <div class="card-controls"><button class="control-btn" onclick="shuffleCard(${i})">🔄</button><button class="control-btn" style="color:var(--danger);" onclick="deleteCard(${i})">🗑️</button></div>
+                <div class="bingo-header"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
+                <div class="grid">${c.numbers.map((n, idx) => `<div class="cell ${idx===12?'marked':''}">${idx===12?'FREE':n}</div>`).join('')}</div>
+            </div>`).join(''); 
+        const fab = document.getElementById('trash-fab');
+        if (deletedCards.length > 0) { fab.classList.remove('hidden'); document.getElementById('trash-count').innerText = deletedCards.length; } else { fab.classList.add('hidden'); }
+    }
+
+    function renderPlayers(l) { if(l) players = l; const ps = Object.entries(players); document.getElementById('player-list-container').innerHTML = ps.map(([n, i]) => `<div style="padding:8px; background:rgba(255,255,255,0.05); border-radius:10px; margin-bottom:5px; font-size:0.8rem; display:flex; justify-content:space-between;"><span>${n} ${i.ready ? '✅' : ''}</span><small>${i.cards} Cards</small></div>`).join(''); if(isHost) { const total = ps.length; const readyCount = ps.filter(([_, i]) => i.ready).length; document.getElementById('start-btn').disabled = total === 0; document.getElementById('start-btn').innerText = `LAUNCH (${readyCount}/${total})`; }}
+    function renderLeaderboard() { const s = Object.entries(sessionWins).sort((a,b) => b[1]-a[1]); if(s.length) { document.getElementById('leaderboard-section').classList.remove('hidden'); document.getElementById('leaderboard-list').innerHTML = s.map(([n, c]) => `<div style="display:flex; justify-content:space-between; font-size:0.8rem;"><span>${n}</span><b>${c} Wins</b></div>`).join(''); } }
+    function resetTournament() { if(confirm("Clear wins?")) { sessionWins = {}; localStorage.removeItem('bingo_wins'); renderLeaderboard(); relay({type:'LEADERBOARD_UPDATE', wins: {}}); } }
+    function genData() { const rs = [[1,15],[16,30],[31,45],[46,60],[61,75]]; const cs = rs.map(r => Array.from({length:15},(_,i)=>i+r[0]).sort(()=>Math.random()-0.5).slice(0,5)); const f = []; for(let r=0; r<5; r++) for(let c=0; c<5; c++) f.push(cs[c][r]); return f; }
+    function toggleAutoMark() { autoMarkEnabled = document.getElementById('auto-mark-toggle').checked; saveAppState(); if(autoMarkEnabled) { myCards.forEach(c => { drawn.forEach(num => { const i = c.numbers.indexOf(num); if(i!==-1 && !c.marked.includes(i)) c.marked.push(i); }); }); renderGame(); }}
+</script>
+</body>
+</html>
