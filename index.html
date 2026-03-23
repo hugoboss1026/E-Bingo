@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -99,6 +100,17 @@
             font-size: 0.7rem; font-weight: 900; width: 20px; height: 20px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center; border: 1px solid var(--danger);
         }
+
+        /* NEW VOICE CHAT STYLES */
+        .voice-controls {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            padding: 10px; background: rgba(255,255,255,0.05); border-radius: 15px; margin: 10px 0;
+        }
+        .voice-btn {
+            background: var(--secondary); border: none; color: white; padding: 8px 15px;
+            border-radius: 10px; cursor: pointer; font-size: 0.8rem; font-weight: bold;
+        }
+        .voice-btn.muted { background: var(--danger); }
     </style>
 </head>
 <body>
@@ -118,6 +130,14 @@
     <div id="view-lobby" class="hidden" style="display:flex; flex-direction:column; height:100%;">
         <div style="text-align:center; margin-bottom: 10px;"><small style="color:rgba(255,255,255,0.5)">LOBBY ID:</small> <b id="lobby-id-display" style="color:var(--primary);">-----</b></div>
         
+        <!-- NEW VOICE UI IN LOBBY -->
+        <div class="voice-controls">
+            <span style="font-size: 0.6rem; color: var(--primary); font-weight:900;">VOICE:</span>
+            <!-- ADDED TOGGLE SWITCH HERE -->
+            <label class="switch"><input type="checkbox" id="voice-activation-toggle" onchange="manualVoiceToggle()"><span class="slider"></span></label>
+            <button id="mute-btn" class="voice-btn muted" onclick="toggleMute()" style="opacity:0.5" disabled>OFF</button>
+        </div>
+
         <div id="lobby-scroll" style="flex:1; overflow-y:auto;">
             <div id="leaderboard-section" class="hidden" style="border: 1px solid var(--gold); border-radius: 15px; padding: 12px; margin-bottom: 10px; background: rgba(251, 191, 36, 0.1);">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -188,12 +208,18 @@
     </div>
 </div>
 
+<div id="audio-container"></div>
+
 <script>
     let peer, conn, isHost = false, myName = "", drawn = [], isReady = false, autoMarkEnabled = false;
     let myCards = [], deletedCards = [], players = {}, activePIndex = 0, gamePatterns = [Array(25).fill(false)];
     let sessionWins = JSON.parse(localStorage.getItem('bingo_wins')) || {}, hasClaimedThisRound = false;
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     let audioCtx;
+
+    /* NEW VOICE GLOBALS */
+    let localMediaStream;
+    let isMicMuted = true;
 
     const PATTERN_PRESETS = {
         "Blackout": Array(25).fill(true),
@@ -249,9 +275,71 @@
         document.getElementById(id).classList.remove('hidden');
     }
 
-    function initSession(mode) {
+    /* VOICE CHAT LOGIC */
+    async function setupVoice() {
+        /* NEW: Added check to see if manual toggle is enabled before requesting mic */
+        if(!document.getElementById('voice-activation-toggle').checked) return;
+        try {
+            localMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            if (localMediaStream && isMicMuted) localMediaStream.getAudioTracks()[0].enabled = false;
+            /* Update UI after successful activation */
+            const btn = document.getElementById('mute-btn');
+            btn.disabled = false; btn.style.opacity = "1";
+            btn.innerText = isMicMuted ? "UNMUTE MIC" : "MUTE MIC";
+            /* If already in a lobby, trigger the calls */
+            if (peer && peer.id) {
+                if (!isHost) {
+                   const hostId = document.getElementById('lobby-id-display').innerText;
+                   if(hostId !== "-----") handleCall(peer.call(hostId, localMediaStream));
+                }
+            }
+        } catch (e) {
+            console.error("Mic access denied", e);
+            /* FALLBACK: Update UI to show Mic is unavailable */
+            const btn = document.getElementById('mute-btn');
+            if(btn) { btn.innerText = "NO MIC FOUND"; btn.disabled = true; }
+        }
+    }
+
+    /* NEW: Manual Toggle Handler */
+    function manualVoiceToggle() {
+        const active = document.getElementById('voice-activation-toggle').checked;
+        if(active) {
+            setupVoice();
+        } else {
+            if(localMediaStream) {
+                localMediaStream.getTracks().forEach(t => t.stop());
+                localMediaStream = null;
+            }
+            const btn = document.getElementById('mute-btn');
+            btn.disabled = true; btn.style.opacity = "0.5"; btn.innerText = "OFF"; btn.classList.add('muted');
+        }
+    }
+
+    function toggleMute() {
+        if (!localMediaStream) return;
+        isMicMuted = !isMicMuted;
+        localMediaStream.getAudioTracks()[0].enabled = !isMicMuted;
+        const btn = document.getElementById('mute-btn');
+        btn.innerText = isMicMuted ? "UNMUTE MIC" : "MUTE MIC";
+        btn.classList.toggle('muted', isMicMuted);
+    }
+
+    function handleCall(call) {
+        /* Revised to only answer if localMediaStream exists or if receive-only is allowed */
+        call.answer(localMediaStream || undefined);
+        call.on('stream', remoteStream => {
+            const audio = document.createElement('audio');
+            audio.srcObject = remoteStream;
+            audio.autoplay = true;
+            document.getElementById('audio-container').appendChild(audio);
+        });
+    }
+
+    async function initSession(mode) {
         myName = document.getElementById('user-name').value.trim();
         if (!myName) return alert("Name Required!");
+        await setupVoice(); // Activate mic before connecting
         if (mode === 'host') startAsHost(); else joinLobby(document.getElementById('join-id').value);
     }
 
@@ -275,6 +363,8 @@
                 if(drawn.length > 0) c.send({ type: 'SYNC_GAME', drawn: drawn, p: gamePatterns });
             }, 500);
         });
+        /* HOST LISTEN FOR VOICE CALLS */
+        peer.on('call', call => handleCall(call));
     }
 
     function joinLobby(id) {
@@ -286,9 +376,19 @@
                 switchView('view-lobby'); 
                 document.getElementById('lobby-id-display').innerText = id; 
                 sync(); 
+                /* CLIENT CALL HOST FOR VOICE - Fallback to Receive-Only if no localMediaStream */
+                if(localMediaStream) {
+                    const call = peer.call(id.toString(), localMediaStream);
+                    handleCall(call);
+                } else {
+                    const call = peer.call(id.toString());
+                    handleCall(call);
+                }
             });
             conn.on('data', data => handleData(data));
         });
+        /* CLIENT LISTEN FOR VOICE CALLS */
+        peer.on('call', call => handleCall(call));
     }
 
     function handleData(data, senderConn) {
@@ -492,8 +592,28 @@
             document.getElementById('start-btn').innerText = `LAUNCH (${readyCount}/${total})`; 
         }
     }
-    function renderLeaderboard() { const s = Object.entries(sessionWins).sort((a,b) => b[1]-a[1]); if(s.length) { document.getElementById('leaderboard-section').classList.remove('hidden'); document.getElementById('leaderboard-list').innerHTML = s.map(([n, c]) => `<div style="display:flex; justify-content:space-between; font-size:0.8rem;"><span>${n}</span><b>${c} Wins</b></div>`).join(''); } }
-    function resetTournament() { if(confirm("Clear wins?")) { sessionWins = {}; localStorage.removeItem('bingo_wins'); renderLeaderboard(); relay({type:'LEADERBOARD_UPDATE', wins: {}}); } }
+    
+    /* REVISED TO PROPERLY CLEAR UI ON RESET */
+    function renderLeaderboard() { 
+        const s = Object.entries(sessionWins).sort((a,b) => b[1]-a[1]); 
+        if(s.length > 0) { 
+            document.getElementById('leaderboard-section').classList.remove('hidden'); 
+            document.getElementById('leaderboard-list').innerHTML = s.map(([n, c]) => `<div style="display:flex; justify-content:space-between; font-size:0.8rem;"><span>${n}</span><b>${c} Wins</b></div>`).join(''); 
+        } else {
+            /* Hide the section if there are no wins to show */
+            document.getElementById('leaderboard-section').classList.add('hidden');
+        }
+    }
+
+    function resetTournament() { 
+        if(confirm("Clear wins?")) { 
+            sessionWins = {}; 
+            localStorage.removeItem('bingo_wins'); 
+            renderLeaderboard(); 
+            if(isHost) relay({type:'LEADERBOARD_UPDATE', wins: {}}); 
+        } 
+    }
+
     function genData() { const rs = [[1,15],[16,30],[31,45],[46,60],[61,75]]; const cs = rs.map(r => Array.from({length:15},(_,i)=>i+r[0]).sort(()=>Math.random()-0.5).slice(0,5)); const f = []; for(let r=0; r<5; r++) for(let c=0; c<5; c++) f.push(cs[c][r]); return f; }
     function toggleAutoMark() { autoMarkEnabled = document.getElementById('auto-mark-toggle').checked; if(autoMarkEnabled) { myCards.forEach(c => drawn.forEach(n => { const i = c.numbers.indexOf(n); if(i!==-1) c.marked.push(i); })); renderGame(); }}
 </script>
