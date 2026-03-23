@@ -367,7 +367,14 @@
             switchView('view-lobby');
             sync(); 
         });
-        peer.on('connection', c => c.on('data', data => handleData(data, c)));
+        peer.on('connection', c => {
+            c.on('data', data => handleData(data, c));
+            // Ensure newcomers receive current patterns and players immediately
+            setTimeout(() => {
+                c.send({type:'LIST', list:players});
+                if(drawn.length > 0) c.send({ type: 'SYNC_GAME', drawn: drawn, p: gamePatterns });
+            }, 500);
+        });
         peer.on('call', call => {
             if (voiceEnabled) {
                 call.answer(localStream);
@@ -398,11 +405,17 @@
     }
 
     function handleData(data, c) {
-        if (isHost && data.type === 'STATUS' && drawn.length > 0) {
-            c.send({ type: 'SYNC_GAME', drawn: drawn, p: gamePatterns });
+        if(data.type === 'STATUS') { 
+            players[data.name] = data; 
+            renderPlayers(); 
+            if(isHost) {
+                relay({type:'LIST', list:players}); 
+                // If a game is active, sync the newcomer immediately
+                if (drawn.length > 0 && c) {
+                    c.send({ type: 'SYNC_GAME', drawn: drawn, p: gamePatterns });
+                }
+            }
         }
-
-        if(data.type === 'STATUS') { players[data.name] = data; renderPlayers(); if(isHost) relay({type:'LIST', list:players}); }
         if(data.type === 'LIST') renderPlayers(data.list);
         if(data.type === 'START') { gamePatterns = data.p; saveAppState(); launch(); }
         if(data.type === 'DRAW') updateGame(data.n);
@@ -432,7 +445,11 @@
     
     function sync() { 
         const s = { type:'STATUS', name:myName, ready:isReady, cards:myCards.length }; 
-        if(isHost) { players[myName]=s; renderPlayers(); relay({type:'LIST', list:players}); } 
+        if(isHost) { 
+            players[myName]=s; 
+            renderPlayers(); 
+            relay({type:'LIST', list:players}); 
+        } 
         else if(conn && conn.open) conn.send(s); 
     }
 
@@ -531,7 +548,6 @@
         sync(); 
         saveAppState(); 
         renderLobby(); 
-        // Ensure game cards list is also visually empty until next round
         if(document.getElementById('game-cards-list')) document.getElementById('game-cards-list').innerHTML = '';
     }
 
@@ -627,7 +643,17 @@
         if (deletedCards.length > 0) { fab.classList.remove('hidden'); document.getElementById('trash-count').innerText = deletedCards.length; } else { fab.classList.add('hidden'); }
     }
 
-    function renderPlayers(l) { if(l) players = l; const ps = Object.entries(players); document.getElementById('player-list-container').innerHTML = ps.map(([n, i]) => `<div style="padding:8px; background:rgba(255,255,255,0.05); border-radius:10px; margin-bottom:5px; font-size:0.8rem; display:flex; justify-content:space-between;"><span>${n} ${i.ready ? '✅' : ''}</span><small>${i.cards} Cards</small></div>`).join(''); if(isHost) { const total = ps.length; const readyCount = ps.filter(([_, i]) => i.ready).length; document.getElementById('start-btn').disabled = total === 0; document.getElementById('start-btn').innerText = `LAUNCH (${readyCount}/${total})`; }}
+    function renderPlayers(l) { 
+        if(l) players = l; 
+        const ps = Object.entries(players); 
+        document.getElementById('player-list-container').innerHTML = ps.map(([n, i]) => `<div style="padding:8px; background:rgba(255,255,255,0.05); border-radius:10px; margin-bottom:5px; font-size:0.8rem; display:flex; justify-content:space-between;"><span>${n} ${i.ready ? '✅' : ''}</span><small>${i.cards} Cards</small></div>`).join(''); 
+        if(isHost) { 
+            const total = ps.length; 
+            const readyCount = ps.filter(([_, i]) => i.ready).length; 
+            document.getElementById('start-btn').disabled = total === 0; 
+            document.getElementById('start-btn').innerText = `LAUNCH (${readyCount}/${total})`; 
+        }
+    }
     function renderLeaderboard() { const s = Object.entries(sessionWins).sort((a,b) => b[1]-a[1]); if(s.length) { document.getElementById('leaderboard-section').classList.remove('hidden'); document.getElementById('leaderboard-list').innerHTML = s.map(([n, c]) => `<div style="display:flex; justify-content:space-between; font-size:0.8rem;"><span>${n}</span><b>${c} Wins</b></div>`).join(''); } }
     function resetTournament() { if(confirm("Clear wins?")) { sessionWins = {}; localStorage.removeItem('bingo_wins'); renderLeaderboard(); relay({type:'LEADERBOARD_UPDATE', wins: {}}); } }
     function genData() { const rs = [[1,15],[16,30],[31,45],[46,60],[61,75]]; const cs = rs.map(r => Array.from({length:15},(_,i)=>i+r[0]).sort(()=>Math.random()-0.5).slice(0,5)); const f = []; for(let r=0; r<5; r++) for(let c=0; c<5; c++) f.push(cs[c][r]); return f; }
