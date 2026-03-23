@@ -345,12 +345,21 @@
         document.getElementById(id).classList.remove('hidden');
     }
 
+    // --- FIX START: Improved initSession ---
     function initSession(mode) {
         myName = document.getElementById('user-name').value.trim();
         if (!myName) return alert("Name Required!");
         saveAppState(); 
-        if (mode === 'host') startAsHost(); else joinLobby(document.getElementById('join-id').value);
+        
+        if (mode === 'host') {
+            startAsHost(); 
+        } else {
+            const code = document.getElementById('join-id').value.trim();
+            if (!code) return alert("Enter Lobby Code!");
+            joinLobby(code);
+        }
     }
+    // --- FIX END ---
 
     function startAsHost() {
         isHost = true; isReady = true;
@@ -369,7 +378,6 @@
         });
         peer.on('connection', c => {
             c.on('data', data => handleData(data, c));
-            // Ensure newcomers receive current patterns and players immediately
             setTimeout(() => {
                 c.send({type:'LIST', list:players});
                 if(drawn.length > 0) c.send({ type: 'SYNC_GAME', drawn: drawn, p: gamePatterns });
@@ -381,21 +389,48 @@
                 setupCallListeners(call);
             }
         });
+        // Handle peer errors (e.g. ID already taken)
+        peer.on('error', err => {
+            console.error(err);
+            alert("Lobby creation failed: " + err.type);
+        });
     }
 
+    // --- FIX START: Improved joinLobby with Error Handling ---
     function joinLobby(id) {
-        if(!id) return alert("Enter Code!");
+        if (peer) peer.destroy(); // Clear existing peer if any
+        
         peer = new Peer();
-        peer.on('open', () => {
-            conn = peer.connect(id);
+        
+        peer.on('open', (myId) => {
+            console.log("My Joiner ID:", myId);
+            conn = peer.connect(id.toString(), { reliable: true });
+            
             conn.on('open', () => { 
+                console.log("Connected to Host:", id);
                 if(myCards.length === 0) addCard(); 
                 switchView('view-lobby'); 
                 document.getElementById('lobby-id-display').innerText = id; 
-                sync();
+                sync(); // Inform host we are here
             });
+            
             conn.on('data', data => handleData(data));
+            
+            conn.on('close', () => {
+                alert("Disconnected from Lobby.");
+                location.reload();
+            });
         });
+
+        peer.on('error', err => {
+            console.error("Peer Error:", err.type);
+            if (err.type === 'peer-not-found') {
+                alert("Error: Lobby Code '" + id + "' not found. Make sure the Host is online.");
+            } else {
+                alert("Connection Error: " + err.type);
+            }
+        });
+
         peer.on('call', call => {
             if (voiceEnabled) {
                 call.answer(localStream);
@@ -403,6 +438,7 @@
             }
         });
     }
+    // --- FIX END ---
 
     function handleData(data, c) {
         if(data.type === 'STATUS') { 
@@ -410,7 +446,6 @@
             renderPlayers(); 
             if(isHost) {
                 relay({type:'LIST', list:players}); 
-                // If a game is active, sync the newcomer immediately
                 if (drawn.length > 0 && c) {
                     c.send({ type: 'SYNC_GAME', drawn: drawn, p: gamePatterns });
                 }
@@ -537,14 +572,10 @@
         drawn = []; 
         if(document.getElementById('recent-list-container')) document.getElementById('recent-list-container').innerHTML = '';
         if(document.getElementById('num-box')) document.getElementById('num-box').innerText = '--';
-        
-        // CLEAR MARKS: Every card is cleared back to ONLY the FREE square (index 12)
         myCards.forEach(c => c.marked = [12]); 
-        
         isReady = isHost; 
         hasClaimedThisRound = false; 
         if (!isHost) document.getElementById('ready-btn').innerText = "I AM READY";
-        
         sync(); 
         saveAppState(); 
         renderLobby(); 
