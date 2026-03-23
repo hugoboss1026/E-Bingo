@@ -1,0 +1,10 @@
+{
+  "name": "bingo-cyber-pro-node24",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "npx serve ."
+  }
+}
